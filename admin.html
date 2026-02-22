@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard — Brad Partners</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="admin-body">
+  <main class="admin-main">
+    <section class="admin-card admin-dashboard">
+      <header class="admin-header">
+        <h1 class="admin-title">Strategy Call Applications</h1>
+        <div class="admin-controls">
+          <input id="search_email" type="search" placeholder="Search by email" class="admin-search" />
+          <button id="download_csv" class="btn btn-primary">Download CSV</button>
+        </div>
+      </header>
+      <div class="admin-table-wrapper">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Location</th>
+              <th>Monthly Revenue</th>
+              <th>Company Size</th>
+              <th>Industry</th>
+              <th>Growth Bottleneck</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody id="submissions_tbody">
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    (function() {
+      const searchInput = document.getElementById('search_email');
+      const tbody = document.getElementById('submissions_tbody');
+
+      function renderRows(items) {
+        tbody.innerHTML = '';
+        items.forEach(function (s) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${s.fullName || ''}</td>
+            <td>${s.email || ''}</td>
+            <td>${s.phone || ''}</td>
+            <td>${s.location || ''}</td>
+            <td>${s.monthlyRevenue || ''}</td>
+            <td>${s.companySize || ''}</td>
+            <td>${s.industry || ''}</td>
+            <td>${(s.growthBottleneck || '').replace(/\n/g, '<br>')}</td>
+            <td>${s.timestamp ? new Date(s.timestamp).toLocaleString() : ''}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      function downloadCSV(data) {
+        if (!data || !data.length) return;
+        
+        const headers = ['Name', 'Email', 'Phone', 'Location', 'Monthly Revenue', 'Company Size', 'Industry', 'Growth Bottleneck', 'Timestamp'];
+        const csvRows = [];
+        
+        // Add header row
+        csvRows.push(headers.join(','));
+        
+        // Add data rows
+        data.forEach(item => {
+          const values = [
+            item.fullName || '',
+            item.email || '',
+            item.phone || '',
+            item.location || '',
+            item.monthlyRevenue || '',
+            item.companySize || '',
+            item.industry || '',
+            `"${(item.growthBottleneck || '').replace(/"/g, '""')}"`, // Escape quotes and wrap in quotes for CSV
+            item.timestamp ? new Date(item.timestamp).toLocaleString() : ''
+          ];
+          csvRows.push(values.join(','));
+        });
+        
+        const csvString = csvRows.join('\n');
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `brad_partners_submissions_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      function fetchData() {
+        fetch('/api/submissions')
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (!data.ok) return;
+            let list = data.submissions || [];
+            renderRows(list);
+
+            const downloadBtn = document.getElementById('download_csv');
+            if (downloadBtn) {
+              downloadBtn.addEventListener('click', function() {
+                downloadCSV(list);
+              });
+            }
+
+            if (searchInput) {
+              searchInput.addEventListener('input', function () {
+                const q = searchInput.value.toLowerCase();
+                const filtered = list.filter(function (s) {
+                  return (s.email || '').toLowerCase().indexOf(q) !== -1;
+                });
+                renderRows(filtered);
+              });
+            }
+          });
+      }
+
+      fetchData();
+    })();
+  </script>
+</body>
+</html>
