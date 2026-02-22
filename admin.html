@@ -14,7 +14,10 @@
         <h1 class="admin-title">Strategy Call Applications</h1>
         <div class="admin-controls">
           <input id="search_email" type="search" placeholder="Search by email" class="admin-search" />
-          <button id="download_csv" class="btn btn-primary">Download CSV</button>
+          <div class="admin-actions-group">
+            <button id="download_csv" class="btn btn-secondary btn-sm">Download CSV</button>
+            <button id="truncate_list" class="btn btn-danger btn-sm">Truncate List</button>
+          </div>
         </div>
       </header>
       <div class="admin-table-wrapper">
@@ -30,6 +33,7 @@
               <th>Industry</th>
               <th>Growth Bottleneck</th>
               <th>Timestamp</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="submissions_tbody">
@@ -39,96 +43,171 @@
     </section>
   </main>
   <script>
-    (function() {
-      const searchInput = document.getElementById('search_email');
+    console.log('[Admin] Dashboard script initializing...');
+
+    // --- 1. State Management ---
+    let submissionsData = [];
+
+    // --- 2. Core API Logic ---
+    async function refreshDashboard() {
+      console.log('[Admin] Refreshing data...');
+      try {
+        const response = await fetch('/api/submissions');
+        const result = await response.json();
+        
+        if (result && result.ok) {
+          submissionsData = result.submissions || [];
+          renderTable(submissionsData);
+        } else {
+          console.error('[Admin] Server returned error:', result);
+        }
+      } catch (error) {
+        console.error('[Admin] Network or Parse error:', error);
+      }
+    }
+
+    // --- 3. UI Rendering ---
+    function renderTable(items) {
+      console.log(`[Admin] Rendering ${items.length} records`);
       const tbody = document.getElementById('submissions_tbody');
+      if (!tbody) return;
 
-      function renderRows(items) {
-        tbody.innerHTML = '';
-        items.forEach(function (s) {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${s.fullName || ''}</td>
-            <td>${s.email || ''}</td>
-            <td>${s.phone || ''}</td>
-            <td>${s.location || ''}</td>
-            <td>${s.monthlyRevenue || ''}</td>
-            <td>${s.companySize || ''}</td>
-            <td>${s.industry || ''}</td>
-            <td>${(s.growthBottleneck || '').replace(/\n/g, '<br>')}</td>
-            <td>${s.timestamp ? new Date(s.timestamp).toLocaleString() : ''}</td>
-          `;
-          tbody.appendChild(tr);
+      tbody.innerHTML = '';
+      
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding: 3rem; color: #64748b;">No submissions found.</td></tr>';
+        return;
+      }
+
+      items.forEach(item => {
+        const row = document.createElement('tr');
+        if (item.done) row.classList.add('row-done');
+        
+        row.innerHTML = `
+          <td>${item.fullName || ''}</td>
+          <td>${item.email || ''}</td>
+          <td>${item.phone || ''}</td>
+          <td>${item.location || ''}</td>
+          <td>${item.monthlyRevenue || ''}</td>
+          <td>${item.companySize || ''}</td>
+          <td>${item.industry || ''}</td>
+          <td style="max-width: 300px; font-size: 0.85rem;">${(item.growthBottleneck || '').replace(/\n/g, '<br>')}</td>
+          <td style="white-space: nowrap;">${item.timestamp ? new Date(item.timestamp).toLocaleString() : ''}</td>
+          <td class="td-actions">
+            <button class="btn-action btn-done ${item.done ? 'is-active' : ''}" 
+                    data-action="toggle-done" 
+                    data-email="${item.email}" 
+                    title="Mark as Done">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </button>
+            <button class="btn-action btn-delete" 
+                    data-action="delete-record" 
+                    data-email="${item.email}" 
+                    title="Delete Record">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // --- 4. Event Handlers ---
+    async function handleRowAction(action, email) {
+      if (action === 'toggle-done') {
+        console.log('[Admin] Toggling status for:', email);
+        const res = await fetch('/api/submissions/toggle-done', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        if ((await res.json()).ok) refreshDashboard();
+      } 
+      
+      else if (action === 'delete-record') {
+        if (!confirm('Permanently delete this entry?')) return;
+        console.log('[Admin] Deleting record:', email);
+        const res = await fetch('/api/submissions/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        if ((await res.json()).ok) refreshDashboard();
+      }
+    }
+
+    async function handleTruncate() {
+      if (!confirm('CRITICAL: Delete ALL records from the system?')) return;
+      console.log('[Admin] Truncating all data...');
+      const res = await fetch('/api/submissions/truncate', { method: 'POST' });
+      if ((await res.json()).ok) refreshDashboard();
+    }
+
+    function handleExport() {
+      if (submissionsData.length === 0) return alert('Nothing to export.');
+      
+      const headers = ['Name', 'Email', 'Phone', 'Location', 'Revenue', 'Size', 'Industry', 'Bottleneck', 'Date'];
+      const csv = [
+        headers.join(','),
+        ...submissionsData.map(s => [
+          `"${(s.fullName || '')}"`,
+          s.email || '',
+          s.phone || '',
+          `"${(s.location || '')}"`,
+          s.monthlyRevenue || '',
+          s.companySize || '',
+          s.industry || '',
+          `"${(s.growthBottleneck || '').replace(/"/g, '""')}"`,
+          s.timestamp || ''
+        ].join(','))
+      ].join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `leads_export_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // --- 5. Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('[Admin] DOM Ready');
+
+      // Table Actions (Delegation)
+      const tbody = document.getElementById('submissions_tbody');
+      if (tbody) {
+        tbody.addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (!btn || !btn.dataset.action) return;
+          handleRowAction(btn.dataset.action, btn.dataset.email);
         });
       }
 
-      function downloadCSV(data) {
-        if (!data || !data.length) return;
-        
-        const headers = ['Name', 'Email', 'Phone', 'Location', 'Monthly Revenue', 'Company Size', 'Industry', 'Growth Bottleneck', 'Timestamp'];
-        const csvRows = [];
-        
-        // Add header row
-        csvRows.push(headers.join(','));
-        
-        // Add data rows
-        data.forEach(item => {
-          const values = [
-            item.fullName || '',
-            item.email || '',
-            item.phone || '',
-            item.location || '',
-            item.monthlyRevenue || '',
-            item.companySize || '',
-            item.industry || '',
-            `"${(item.growthBottleneck || '').replace(/"/g, '""')}"`, // Escape quotes and wrap in quotes for CSV
-            item.timestamp ? new Date(item.timestamp).toLocaleString() : ''
-          ];
-          csvRows.push(values.join(','));
+      // Header Actions
+      const dlBtn = document.getElementById('download_csv');
+      if (dlBtn) dlBtn.addEventListener('click', handleExport);
+
+      const trBtn = document.getElementById('truncate_list');
+      if (trBtn) trBtn.addEventListener('click', handleTruncate);
+
+      // Search Filter
+      const searchBox = document.getElementById('search_email');
+      if (searchBox) {
+        searchBox.addEventListener('input', (e) => {
+          const query = e.target.value.toLowerCase();
+          const filtered = submissionsData.filter(s => 
+            (s.email || '').toLowerCase().includes(query) || 
+            (s.fullName || '').toLowerCase().includes(query)
+          );
+          renderTable(filtered);
         });
-        
-        const csvString = csvRows.join('\n');
-        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', `brad_partners_submissions_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
       }
 
-      function fetchData() {
-        fetch('/api/submissions')
-          .then(function (res) { return res.json(); })
-          .then(function (data) {
-            if (!data.ok) return;
-            let list = data.submissions || [];
-            renderRows(list);
-
-            const downloadBtn = document.getElementById('download_csv');
-            if (downloadBtn) {
-              downloadBtn.addEventListener('click', function() {
-                downloadCSV(list);
-              });
-            }
-
-            if (searchInput) {
-              searchInput.addEventListener('input', function () {
-                const q = searchInput.value.toLowerCase();
-                const filtered = list.filter(function (s) {
-                  return (s.email || '').toLowerCase().indexOf(q) !== -1;
-                });
-                renderRows(filtered);
-              });
-            }
-          });
-      }
-
-      fetchData();
-    })();
+      // Initial Fetch
+      refreshDashboard();
+    });
   </script>
 </body>
 </html>

@@ -113,6 +113,43 @@ app.get('/api/submissions', requireAuth, (req, res) => {
   res.json({ ok: true, submissions });
 });
 
+app.post('/api/submissions/delete', requireAuth, (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
+  
+  let submissions = readSubmissions();
+  const initialLength = submissions.length;
+  submissions = submissions.filter(s => s.email.toLowerCase() !== email.toLowerCase());
+  
+  if (submissions.length === initialLength) {
+    return res.status(404).json({ ok: false, error: 'Not found' });
+  }
+  
+  writeSubmissions(submissions);
+  res.json({ ok: true });
+});
+
+app.post('/api/submissions/toggle-done', requireAuth, (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
+  
+  const submissions = readSubmissions();
+  const index = submissions.findIndex(s => s.email.toLowerCase() === email.toLowerCase());
+  
+  if (index === -1) {
+    return res.status(404).json({ ok: false, error: 'Not found' });
+  }
+  
+  submissions[index].done = !submissions[index].done;
+  writeSubmissions(submissions);
+  res.json({ ok: true, done: submissions[index].done });
+});
+
+app.post('/api/submissions/truncate', requireAuth, (req, res) => {
+  writeSubmissions([]);
+  res.json({ ok: true });
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 });
